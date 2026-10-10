@@ -1,0 +1,7 @@
+node_modules/
+runtime/
+cloudflared.exe
+*.db-shm
+*.db-wal
+*.xlsx
+.env
