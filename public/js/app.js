@@ -10,6 +10,8 @@ const state = {
   calendarMonth: now.getMonth() + 1, // 1 - 12
   selectedModalDate: null,
   projects: [],
+  projectViewMode: 'list', // 'list' | 'matrix'
+  matrixData: null,
   monthLogsByDate: {},
   pieChart: null,
   barChart: null
@@ -62,6 +64,34 @@ function getDayNameVN(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
   const days = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
   return days[d.getDay()];
+}
+
+function getWorkRoleBadge(role) {
+  switch (role) {
+    case 'Chủ nhiệm dự án':
+      return `<span class="text-[9px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-1 py-0.2 rounded" title="Chủ nhiệm dự án">Chủ nhiệm</span>`;
+    case 'Chủ trì thiết kế':
+      return `<span class="text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1 py-0.2 rounded" title="Chủ trì thiết kế">Chủ trì</span>`;
+    case 'Hỗ trợ':
+      return `<span class="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1 py-0.2 rounded" title="Hỗ trợ">Hỗ trợ</span>`;
+    case 'Thiết kế':
+    default:
+      return `<span class="text-[9px] font-bold text-teal-700 bg-teal-50 border border-teal-200 px-1 py-0.2 rounded" title="Thiết kế">Thiết kế</span>`;
+  }
+}
+
+function getWorkRoleBadgeFull(role) {
+  switch (role) {
+    case 'Chủ nhiệm dự án':
+      return `<span class="px-2 py-0.5 text-[11px] font-bold bg-purple-100 text-purple-800 rounded-md border border-purple-200 flex items-center space-x-1" title="Thể loại công việc: Chủ nhiệm dự án"><i class="fa-solid fa-crown text-[9px]"></i><span>Chủ nhiệm dự án</span></span>`;
+    case 'Chủ trì thiết kế':
+      return `<span class="px-2 py-0.5 text-[11px] font-bold bg-blue-100 text-blue-800 rounded-md border border-blue-200 flex items-center space-x-1" title="Thể loại công việc: Chủ trì thiết kế"><i class="fa-solid fa-compass-drafting text-[9px]"></i><span>Chủ trì thiết kế</span></span>`;
+    case 'Hỗ trợ':
+      return `<span class="px-2 py-0.5 text-[11px] font-bold bg-amber-100 text-amber-800 rounded-md border border-amber-200 flex items-center space-x-1" title="Thể loại công việc: Hỗ trợ"><i class="fa-solid fa-handshake-angle text-[9px]"></i><span>Hỗ trợ</span></span>`;
+    case 'Thiết kế':
+    default:
+      return `<span class="px-2 py-0.5 text-[11px] font-bold bg-teal-100 text-teal-800 rounded-md border border-teal-200 flex items-center space-x-1" title="Thể loại công việc: Thiết kế"><i class="fa-solid fa-pen-ruler text-[9px]"></i><span>Thiết kế</span></span>`;
+  }
 }
 
 // ------------------------------------------
@@ -130,6 +160,22 @@ function initEventListeners() {
 
   // Form Đổi mật khẩu cá nhân
   document.getElementById('changePasswordForm').addEventListener('submit', handleChangePassword);
+
+  // Lắng nghe chọn dự án để đồng bộ highlight pill chọn nhanh
+  const modalProjectSelect = document.getElementById('modalProjectSelect');
+  if (modalProjectSelect) {
+    modalProjectSelect.addEventListener('change', (e) => {
+      selectQuickProject(e.target.value);
+    });
+  }
+
+  // Lắng nghe đổi nhân viên ở modal ghi nhật ký (Admin) để tải dự án gần đây của nhân viên đó
+  const modalUserSelect = document.getElementById('modalUserSelect');
+  if (modalUserSelect) {
+    modalUserSelect.addEventListener('change', (e) => {
+      loadQuickRecentProjects(e.target.value);
+    });
+  }
 
   // Mặc định chọn tháng hiện tại ở báo cáo
   const reportMonth = document.getElementById('reportMonthSelector');
@@ -283,15 +329,16 @@ function setupLoggedInUser(user) {
     roleBadge.className = 'text-[11px] px-2 py-0.5 rounded-full font-medium bg-purple-100 text-purple-700';
     // Hiển thị các tab dành riêng cho admin
     document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
-    if (calUserWrapper) calUserWrapper.classList.remove('hidden');
-    loadUsersDropdowns();
   } else {
     roleBadge.innerText = 'Nhân viên';
     roleBadge.className = 'text-[11px] px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700';
     // Ẩn các tab admin
     document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
-    if (calUserWrapper) calUserWrapper.classList.add('hidden');
   }
+
+  // Cả Admin và Nhân viên đều có thể xem nhật ký toàn bộ thành viên và lọc theo nhân viên
+  if (calUserWrapper) calUserWrapper.classList.remove('hidden');
+  loadUsersDropdowns();
 
   // Khởi động dữ liệu ban đầu
   switchTab('logs');
@@ -335,7 +382,11 @@ function switchTab(tabName) {
   } else if (tabName === 'reports') {
     loadMonthlyReport();
   } else if (tabName === 'projects') {
-    loadProjectsTable();
+    if (state.projectViewMode === 'matrix') {
+      renderTimesheetMatrix();
+    } else {
+      loadProjectsTable();
+    }
   } else if (tabName === 'users') {
     loadUsersTable();
   }
@@ -389,7 +440,7 @@ async function loadUsersDropdowns() {
     const data = await res.json();
     userListCache = data.users || [];
 
-    // 1. Cập nhật dropdown lọc nhân viên trên Lịch tháng (Admin)
+    // 1. Cập nhật dropdown lọc nhân viên trên Lịch tháng (Admin & Nhân viên)
     const calFilter = document.getElementById('calendarUserFilter');
     if (calFilter) {
       const currentVal = calFilter.value;
@@ -403,7 +454,7 @@ async function loadUsersDropdowns() {
       if (currentVal) calFilter.value = currentVal;
     }
 
-    // 2. Cập nhật dropdown chọn nhân viên ở modal ghi nhật ký
+    // 2. Cập nhật dropdown chọn nhân viên ở modal ghi nhật ký (Admin)
     const modalUserSelect = document.getElementById('modalUserSelect');
     if (modalUserSelect) {
       const currentModalVal = modalUserSelect.value;
@@ -420,9 +471,328 @@ async function loadUsersDropdowns() {
         modalUserSelect.value = state.currentUser.id;
       }
     }
+
+    // 3. Cập nhật danh sách nhân viên vào các dropdown chọn vai trò của dự án
+    populateProjectRoleDropdowns();
+
   } catch (err) {
     console.error('Lỗi tải danh sách nhân viên cho dropdown:', err);
   }
+}
+
+// ------------------------------------------
+// QUẢN LÝ CHỌN VAI TRÒ DỰ ÁN TỪ DANH SÁCH NHÂN VIÊN
+// ------------------------------------------
+const projectModalRoles = {
+  manager: [],
+  design_lead: [],
+  designer: [],
+  supporter: []
+};
+
+function populateProjectRoleDropdowns() {
+  const roleSelectMap = {
+    manager: document.getElementById('projectManagerSelect'),
+    design_lead: document.getElementById('projectDesignLeadSelect'),
+    designer: document.getElementById('projectDesignerSelect'),
+    supporter: document.getElementById('projectSupporterSelect')
+  };
+
+  Object.entries(roleSelectMap).forEach(([roleKey, selectEl]) => {
+    if (!selectEl) return;
+    selectEl.innerHTML = '<option value="">+ Chọn nhân viên từ danh sách...</option>';
+    userListCache.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u.full_name;
+      opt.textContent = `${u.full_name} (${u.username})`;
+      selectEl.appendChild(opt);
+    });
+  });
+}
+
+function addProjectRoleUser(roleKey, userName) {
+  if (!userName || !userName.trim()) return;
+  userName = userName.trim();
+  if (!projectModalRoles[roleKey]) projectModalRoles[roleKey] = [];
+  if (!projectModalRoles[roleKey].includes(userName)) {
+    projectModalRoles[roleKey].push(userName);
+    syncProjectRoleInputAndTags(roleKey);
+  }
+}
+
+function removeProjectRoleUser(roleKey, userName) {
+  if (!projectModalRoles[roleKey]) return;
+  projectModalRoles[roleKey] = projectModalRoles[roleKey].filter(name => name !== userName);
+  syncProjectRoleInputAndTags(roleKey);
+}
+
+function setProjectRoleUsers(roleKey, commaSeparatedString) {
+  projectModalRoles[roleKey] = (commaSeparatedString || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  syncProjectRoleInputAndTags(roleKey);
+}
+
+function syncProjectRoleInputAndTags(roleKey) {
+  const inputMap = {
+    manager: 'projectManagerInput',
+    design_lead: 'projectDesignLeadInput',
+    designer: 'projectDesignerInput',
+    supporter: 'projectSupporterInput'
+  };
+  const tagContainerMap = {
+    manager: 'projectManagerTags',
+    design_lead: 'projectDesignLeadTags',
+    designer: 'projectDesignerTags',
+    supporter: 'projectSupporterTags'
+  };
+  const countBadgeMap = {
+    manager: 'projectManagerCount',
+    design_lead: 'projectDesignLeadCount',
+    designer: 'projectDesignerCount',
+    supporter: 'projectSupporterCount'
+  };
+  const colorMap = {
+    manager: 'bg-purple-100 text-purple-800 border-purple-200',
+    design_lead: 'bg-blue-100 text-blue-800 border-blue-200',
+    designer: 'bg-teal-100 text-teal-800 border-teal-200',
+    supporter: 'bg-amber-100 text-amber-800 border-amber-200'
+  };
+
+  const users = projectModalRoles[roleKey] || [];
+  const inputEl = document.getElementById(inputMap[roleKey]);
+  if (inputEl) inputEl.value = users.join(', ');
+
+  const countEl = document.getElementById(countBadgeMap[roleKey]);
+  if (countEl) countEl.innerText = `${users.length} người`;
+
+  const tagContainer = document.getElementById(tagContainerMap[roleKey]);
+  if (tagContainer) {
+    if (users.length === 0) {
+      tagContainer.innerHTML = '<span class="text-[11px] text-slate-400 italic">Chưa chọn nhân viên nào</span>';
+    } else {
+      tagContainer.innerHTML = users.map(name => `
+        <span class="inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full border shadow-2xs ${colorMap[roleKey] || 'bg-slate-100 text-slate-700 border-slate-200'}">
+          <span>${escapeHtml(name)}</span>
+          <button type="button" onclick="removeProjectRoleUser('${roleKey}', '${escapeHtml(name)}')" class="ml-1 opacity-70 hover:opacity-100 text-[10px] w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-black/10 transition" title="Xóa nhân viên này">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </span>
+      `).join('');
+    }
+  }
+}
+
+// ------------------------------------------
+// HIỂN THỊ CÁC DỰ ÁN NHÂN VIÊN ĐƯỢC PHÂN CÔNG PHỤ TRÁCH
+// ------------------------------------------
+function renderAssignedProjects() {
+  const container = document.getElementById('assignedProjectsList');
+  const section = document.getElementById('assignedProjectsSection');
+  const badge = document.getElementById('assignedProjectsCountBadge');
+  if (!container || !section) return;
+
+  if (!state.currentUser) {
+    section.classList.add('hidden');
+    return;
+  }
+
+  const userName = state.currentUser.full_name;
+  const assignedProjects = [];
+
+  (state.projects || []).forEach(p => {
+    const myRoles = [];
+    if (p.manager && p.manager.includes(userName)) myRoles.push({ name: 'Chủ nhiệm dự án', badge: 'bg-purple-100 text-purple-800 border-purple-200' });
+    if (p.design_lead && p.design_lead.includes(userName)) myRoles.push({ name: 'Chủ trì thiết kế', badge: 'bg-blue-100 text-blue-800 border-blue-200' });
+    if (p.designer && p.designer.includes(userName)) myRoles.push({ name: 'Thiết kế', badge: 'bg-teal-100 text-teal-800 border-teal-200' });
+    if (p.supporter && p.supporter.includes(userName)) myRoles.push({ name: 'Hỗ trợ', badge: 'bg-amber-100 text-amber-800 border-amber-200' });
+
+    if (myRoles.length > 0) {
+      assignedProjects.push({ ...p, myRoles });
+    }
+  });
+
+  state.myAssignedProjects = assignedProjects;
+  if (badge) badge.innerText = `${assignedProjects.length} dự án`;
+
+  if (assignedProjects.length === 0) {
+    container.innerHTML = `
+      <div class="col-span-full py-3 px-4 bg-white/70 rounded-xl border border-dashed border-indigo-200 text-xs text-slate-500 text-center">
+        Bạn chưa có tên trong danh sách phân công phụ trách dự án nào. Bạn vẫn có thể chọn bất kỳ dự án nào trong menu để ghi nhật ký.
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = assignedProjects.map(p => `
+    <div class="p-3 bg-white hover:bg-slate-50/80 rounded-xl border border-slate-200/90 shadow-2xs transition flex flex-col justify-between">
+      <div>
+        <div class="flex items-center justify-between gap-1 mb-1.5">
+          <span class="font-bold text-blue-700 text-xs px-2 py-0.5 bg-blue-50 rounded-md border border-blue-100">[${p.code}]</span>
+          <div class="flex flex-wrap gap-1">
+            ${p.myRoles.map(r => `<span class="text-[10px] font-bold px-1.5 py-0.2 rounded-full border ${r.badge}">${r.name}</span>`).join('')}
+          </div>
+        </div>
+        <h4 class="font-bold text-xs text-slate-800 line-clamp-1" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</h4>
+        <div class="text-[11px] text-slate-400 mt-0.5 truncate">${p.contract_no ? `HĐ: ${escapeHtml(p.contract_no)}` : '--'}</div>
+      </div>
+      <div class="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
+        <span class="text-[10px] ${p.status === 'active' ? 'text-emerald-600' : 'text-slate-400'} font-semibold">
+          ${p.status === 'active' ? '● Đang thực hiện' : '○ Tạm dừng'}
+        </span>
+        <button type="button" onclick="quickLogForAssignedProject(${p.id}, '${escapeHtml(p.myRoles[0]?.name || 'Thiết kế')}')" 
+          class="px-2.5 py-1 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 hover:text-blue-700 rounded-lg transition flex items-center space-x-1">
+          <i class="fa-solid fa-pen-to-square text-[10px]"></i>
+          <span>Ghi Việc</span>
+        </button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function toggleAssignedProjectsCollapse() {
+  const container = document.getElementById('assignedProjectsList');
+  const text = document.getElementById('toggleAssignedProjectsText');
+  const icon = document.getElementById('toggleAssignedProjectsIcon');
+  if (!container) return;
+
+  const isHidden = container.classList.toggle('hidden');
+  if (text) text.innerText = isHidden ? 'Mở rộng' : 'Thu gọn';
+  if (icon) icon.className = isHidden ? 'fa-solid fa-chevron-down text-[10px]' : 'fa-solid fa-chevron-up text-[10px]';
+}
+
+function quickLogForAssignedProject(projectId, suggestedRole) {
+  const todayStr = new Date().toISOString().split('T')[0];
+  openDayDetailModal(todayStr);
+  const projSelect = document.getElementById('modalProjectSelect');
+  if (projSelect) projSelect.value = projectId;
+  const roleSelect = document.getElementById('modalWorkRoleSelect');
+  if (roleSelect && suggestedRole) roleSelect.value = suggestedRole;
+  selectQuickProject(projectId);
+  const hoursInput = document.getElementById('modalHoursInput');
+  if (hoursInput) hoursInput.focus();
+}
+
+// ------------------------------------------
+// CỤM CHỌN NHANH MÃ DỰ ÁN ĐÃ GHI GẦN ĐÂY TRONG MODAL
+// ------------------------------------------
+async function loadQuickRecentProjects(userId = null) {
+  const container = document.getElementById('quickRecentProjectsList');
+  const wrapper = document.getElementById('quickRecentProjectsWrapper');
+  if (!container || !wrapper) return;
+
+  let queryUrl = '/api/logs/recent-projects';
+  if (userId) queryUrl += `?user_id=${encodeURIComponent(userId)}`;
+
+  try {
+    const res = await fetch(queryUrl);
+    let list = [];
+    if (res.ok) {
+      const data = await res.json();
+      list = data.recent_projects || [];
+    }
+
+    // Nếu người dùng chưa có nhật ký nào gần đây, bổ sung các dự án được phân công
+    if (list.length < 4 && state.myAssignedProjects && state.myAssignedProjects.length > 0) {
+      const existingIds = new Set(list.map(p => p.id));
+      state.myAssignedProjects.forEach(ap => {
+        if (!existingIds.has(ap.id) && list.length < 8) {
+          list.push({ id: ap.id, code: ap.code, name: ap.name, contract_no: ap.contract_no });
+          existingIds.add(ap.id);
+        }
+      });
+    }
+
+    if (list.length === 0) {
+      wrapper.classList.add('hidden');
+      return;
+    }
+
+    wrapper.classList.remove('hidden');
+    const currentSelectedId = document.getElementById('modalProjectSelect')?.value;
+
+    container.innerHTML = list.map(p => {
+      const isSelected = (currentSelectedId && currentSelectedId == p.id);
+      const activeClass = isSelected
+        ? 'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-300'
+        : 'bg-white hover:bg-blue-50 text-slate-700 border-slate-200/90';
+      return `
+        <button type="button" onclick="selectQuickProject(${p.id})" 
+          data-proj-id="${p.id}"
+          title="[${p.code}] ${escapeHtml(p.name)}"
+          class="quick-proj-pill px-2.5 py-1 text-xs font-semibold rounded-lg border transition shadow-2xs flex items-center space-x-1 ${activeClass}">
+          <span class="font-bold ${isSelected ? 'text-white' : 'text-blue-700'}">[${p.code}]</span>
+          <span class="truncate max-w-[130px] text-[11px]">${escapeHtml(p.name)}</span>
+        </button>
+      `;
+    }).join('');
+  } catch (err) {
+    console.error('Lỗi tải danh sách dự án gần đây:', err);
+  }
+}
+
+function selectQuickProject(projId) {
+  const select = document.getElementById('modalProjectSelect');
+  if (select && projId) {
+    select.value = projId;
+    document.querySelectorAll('.quick-proj-pill').forEach(btn => {
+      const spanCode = btn.querySelector('span');
+      if (btn.dataset.projId == projId) {
+        btn.className = 'quick-proj-pill px-2.5 py-1 text-xs font-semibold rounded-lg border transition shadow-xs flex items-center space-x-1 bg-blue-600 text-white border-blue-600 ring-2 ring-blue-300';
+        if (spanCode) spanCode.className = 'font-bold text-white';
+      } else {
+        btn.className = 'quick-proj-pill px-2.5 py-1 text-xs font-semibold rounded-lg border transition shadow-2xs flex items-center space-x-1 bg-white hover:bg-blue-50 text-slate-700 border-slate-200/90';
+        if (spanCode) spanCode.className = 'font-bold text-blue-700';
+      }
+    });
+
+    // Nếu dự án này có vai trò phân công cụ thể của user, tự động gợi ý luôn
+    const assigned = state.myAssignedProjects?.find(x => x.id == projId);
+    if (assigned && assigned.myRoles?.length > 0) {
+      const roleEl = document.getElementById('modalWorkRoleSelect');
+      if (roleEl) roleEl.value = assigned.myRoles[0].name;
+    }
+  }
+}
+
+// Điền danh sách dự án vào dropdown modal với sắp xếp số từ nhỏ đến lớn
+function populateModalProjectDropdown(preserveValue = null) {
+  const modalSelect = document.getElementById('modalProjectSelect');
+  if (!modalSelect || !state.projects) return;
+
+  const currentSelected = (preserveValue !== null) ? preserveValue : modalSelect.value;
+  modalSelect.innerHTML = '<option value="">-- Bấm để chọn tên dự án --</option>';
+
+  // Sắp xếp tự nhiên theo mã chữ số từ nhỏ đến lớn (VD: 000000 -> 190809 -> 201035 -> 240101.1 -> 240101.2)
+  const numericSort = (a, b) => (a.code || '').localeCompare((b.code || ''), undefined, { numeric: true, sensitivity: 'base' });
+  const assignedIds = new Set((state.myAssignedProjects || []).map(p => p.id));
+  const myActiveProjects = state.projects.filter(p => p.status === 'active' && assignedIds.has(p.id)).sort(numericSort);
+  const otherActiveProjects = state.projects.filter(p => p.status === 'active' && !assignedIds.has(p.id)).sort(numericSort);
+
+  if (myActiveProjects.length > 0) {
+    const groupAssigned = document.createElement('optgroup');
+    groupAssigned.label = '⭐ Dự án bạn được phân công phụ trách';
+    myActiveProjects.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.contract_no ? `[${p.code}] ${p.name} (HĐ: ${p.contract_no})` : `[${p.code}] ${p.name}`;
+      groupAssigned.appendChild(opt);
+    });
+    modalSelect.appendChild(groupAssigned);
+  }
+
+  const groupAll = document.createElement('optgroup');
+  groupAll.label = myActiveProjects.length > 0 ? '📁 Các dự án khác đang thực hiện' : '📁 Tất cả dự án đang thực hiện';
+  otherActiveProjects.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.contract_no ? `[${p.code}] ${p.name} (HĐ: ${p.contract_no})` : `[${p.code}] ${p.name}`;
+    groupAll.appendChild(opt);
+  });
+  modalSelect.appendChild(groupAll);
+
+  if (currentSelected) modalSelect.value = currentSelected;
 }
 
 // Tải danh sách dự án active để điền vào các dropdown chọn
@@ -433,19 +803,11 @@ async function loadProjectsList() {
     const data = await res.json();
     state.projects = data.projects;
 
-    // Cập nhật dropdown ở modal ghi việc
-    const modalSelect = document.getElementById('modalProjectSelect');
-    if (modalSelect) {
-      modalSelect.innerHTML = '<option value="">-- Bấm để chọn tên dự án --</option>';
-      data.projects.forEach(p => {
-        if (p.status === 'active') {
-          const opt = document.createElement('option');
-          opt.value = p.id;
-          opt.textContent = p.contract_no ? `[${p.code}] ${p.name} (HĐ: ${p.contract_no})` : `[${p.code}] ${p.name}`;
-          modalSelect.appendChild(opt);
-        }
-      });
-    }
+    // 1. Hiển thị khối dự án được phân công cho nhân viên
+    renderAssignedProjects();
+
+    // 2. Cập nhật dropdown ở modal ghi việc
+    populateModalProjectDropdown();
   } catch (err) {
     console.error('Lỗi tải danh mục dự án:', err);
   }
@@ -465,9 +827,9 @@ async function loadCalendar() {
     picker.value = monthStr;
   }
 
-  // Kiểm tra bộ lọc nhân viên (Admin)
+  // Kiểm tra bộ lọc nhân viên (Admin & Nhân viên đều có thể lọc)
   const calFilter = document.getElementById('calendarUserFilter');
-  const filteredUserId = (state.currentUser?.role === 'admin' && calFilter) ? calFilter.value : '';
+  const filteredUserId = calFilter ? calFilter.value : '';
 
   let queryUrl = `/api/logs?month=${monthStr}&limit=500`;
   if (filteredUserId) {
@@ -581,17 +943,18 @@ function renderCalendarGrid() {
 
     // Danh sách thẻ dự án trong ngày
     let projectBadgesHtml = '';
-    const isAdmin = (state.currentUser?.role === 'admin');
     if (logs.length > 0) {
       projectBadgesHtml = logs.slice(0, 3).map(log => {
-        const userBadge = (isAdmin && log.user_name) ? `<span class="text-[9px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-1 py-0.2 rounded truncate max-w-[85px] inline-block" title="Nhân viên: ${escapeHtml(log.user_name)}">${escapeHtml(log.user_name)}</span>` : '';
+        const userBadge = log.user_name ? `<span class="text-[9px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-1 py-0.2 rounded truncate max-w-[75px] inline-block" title="Nhân viên: ${escapeHtml(log.user_name)}">${escapeHtml(log.user_name)}</span>` : '';
+        const roleBadge = getWorkRoleBadge(log.work_role);
         return `
         <div onclick="event.stopPropagation(); openDayDetailModal('${dateStr}', ${log.id})" 
-          title="[${log.project_code}] ${log.project_name} | ${escapeHtml(log.user_name || '')}: ${log.hours}h ${log.ot_hours > 0 ? `(+${log.ot_hours}h OT)` : ''} - ${escapeHtml(log.description)}"
-          class="proj-badge-item text-[11px] font-medium bg-white border border-slate-200/90 text-slate-800 px-2 py-1 rounded-lg flex items-center justify-between shadow-xs truncate cursor-pointer hover:border-blue-400">
+          title="[${log.project_code}] ${log.project_name} | ${log.work_role || 'Thiết kế'} | ${escapeHtml(log.user_name || '')}: ${log.hours}h ${log.ot_hours > 0 ? `(+${log.ot_hours}h OT)` : ''}${log.description ? ' - ' + escapeHtml(log.description) : ''}"
+          class="proj-badge-item text-[11px] font-medium bg-white border border-slate-200/90 text-slate-800 px-1.5 py-1 rounded-lg flex items-center justify-between shadow-xs truncate cursor-pointer hover:border-blue-400">
           <div class="truncate mr-1 flex items-center space-x-1">
             <span class="truncate font-bold text-blue-700">[${log.project_code}]</span>
             ${userBadge}
+            ${roleBadge}
           </div>
           <div class="flex items-center space-x-1 shrink-0">
             <span class="font-bold text-[10px] text-slate-700 bg-slate-100 px-1.5 py-0.2 rounded">${log.hours.toFixed(1)}h</span>
@@ -680,7 +1043,16 @@ function openDayDetailModal(dateStr, editLogId = null) {
   }
 
   // Đảm bảo dropdown dự án đã được nạp
-  loadProjectsList();
+  if (!state.projects || state.projects.length === 0) {
+    loadProjectsList();
+  } else {
+    populateModalProjectDropdown();
+  }
+
+  // Nạp danh sách mã các dự án gần đây để người dùng chọn nhanh
+  const userSelect = document.getElementById('modalUserSelect');
+  const targetQuickUserId = (state.currentUser?.role === 'admin' && userSelect?.value) ? userSelect.value : state.currentUser?.id;
+  loadQuickRecentProjects(targetQuickUserId);
 
   // Nạp danh sách các công việc đã làm trong ngày đó
   renderModalDayLogsList(dateStr);
@@ -754,6 +1126,7 @@ function renderModalDayLogsList(dateStr) {
             ${item.project_code}
           </span>
           <span class="text-xs font-bold text-slate-900">${item.project_name}</span>
+          ${getWorkRoleBadgeFull(item.work_role)}
           <span class="text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200">
             ${item.hours.toFixed(1)}h
           </span>
@@ -764,7 +1137,7 @@ function renderModalDayLogsList(dateStr) {
             </span>
           ` : ''}
         </div>
-        <p class="text-xs text-slate-600 mt-1.5 whitespace-pre-line leading-relaxed">${escapeHtml(item.description)}</p>
+        ${item.description ? `<p class="text-xs text-slate-600 mt-1.5 whitespace-pre-line leading-relaxed">${escapeHtml(item.description)}</p>` : ''}
         ${item.ot_reason ? `<div class="text-[11px] text-amber-700 mt-1 flex items-center"><i class="fa-solid fa-circle-info mr-1 text-[10px]"></i><span>Lý do OT: ${escapeHtml(item.ot_reason)}</span></div>` : ''}
       </div>
 
@@ -809,6 +1182,8 @@ function resetModalLogForm() {
   document.getElementById('modalEditingLogId').value = '';
   document.getElementById('modalProjectSelect').value = '';
   document.getElementById('modalHoursInput').value = '';
+  const workRoleEl = document.getElementById('modalWorkRoleSelect');
+  if (workRoleEl) workRoleEl.value = 'Thiết kế';
   document.getElementById('modalOtHoursInput').value = '';
   document.getElementById('modalOtFromInput').value = '';
   document.getElementById('modalOtToInput').value = '';
@@ -832,6 +1207,13 @@ function resetModalLogForm() {
   `;
   document.getElementById('modalSubmitBtnText').innerText = 'Lưu Vào Ngày Này';
   document.getElementById('modalCancelEditBtn').classList.add('hidden');
+
+  // Reset trạng thái chọn nhanh dự án
+  document.querySelectorAll('.quick-proj-pill').forEach(btn => {
+    btn.className = 'quick-proj-pill px-2.5 py-1 text-xs font-semibold rounded-lg border transition shadow-2xs flex items-center space-x-1 bg-white hover:bg-blue-50 text-slate-700 border-slate-200/90';
+    const spanCode = btn.querySelector('span');
+    if (spanCode) spanCode.className = 'font-bold text-blue-700';
+  });
 }
 
 function editModalLog(id) {
@@ -843,16 +1225,21 @@ function editModalLog(id) {
   document.getElementById('modalEditingLogId').value = item.id;
   document.getElementById('modalProjectSelect').value = item.project_id;
   document.getElementById('modalHoursInput').value = item.hours;
+  const workRoleEl = document.getElementById('modalWorkRoleSelect');
+  if (workRoleEl) workRoleEl.value = item.work_role || 'Thiết kế';
   document.getElementById('modalOtHoursInput').value = item.ot_hours || '';
   document.getElementById('modalOtFromInput').value = item.ot_from_time || '';
   document.getElementById('modalOtToInput').value = item.ot_to_time || '';
   document.getElementById('modalOtReasonInput').value = item.ot_reason || '';
-  document.getElementById('modalDescInput').value = item.description;
+  document.getElementById('modalDescInput').value = item.description || '';
 
   const modalUserSelect = document.getElementById('modalUserSelect');
   if (modalUserSelect && item.user_id) {
     modalUserSelect.value = item.user_id;
   }
+
+  // Đồng bộ highlight pill chọn nhanh
+  selectQuickProject(item.project_id);
 
   document.getElementById('modalFormTitle').innerHTML = `
     <i class="fa-solid fa-pen-to-square text-blue-600 mr-2"></i>
@@ -868,9 +1255,10 @@ function editModalLog(id) {
 async function handleSaveModalLog(e) {
   e.preventDefault();
   const editingId = document.getElementById('modalEditingLogId').value;
-  const log_date = state.selectedModalDate;
+  const log_date = state.selectedModalDate || document.getElementById('modalSelectedDate')?.value || new Date().toISOString().split('T')[0];
   const project_id = document.getElementById('modalProjectSelect').value;
   const hours = document.getElementById('modalHoursInput').value;
+  const work_role = document.getElementById('modalWorkRoleSelect')?.value || 'Thiết kế';
   const ot_hours = document.getElementById('modalOtHoursInput').value;
   const ot_from_time = document.getElementById('modalOtFromInput').value;
   const ot_to_time = document.getElementById('modalOtToInput').value;
@@ -882,7 +1270,13 @@ async function handleSaveModalLog(e) {
     return;
   }
 
-  const payload = { project_id, log_date, hours, description, ot_hours, ot_from_time, ot_to_time, ot_reason };
+  const numHours = parseFloat(hours);
+  if (!hours || isNaN(numHours) || numHours <= 0 || numHours > 24) {
+    showToast('Vui lòng nhập số giờ làm việc hợp lệ (từ 0.1 đến 24 giờ)!', 'warning');
+    return;
+  }
+
+  const payload = { project_id, log_date, hours: numHours, work_role, description, ot_hours, ot_from_time, ot_to_time, ot_reason };
 
   // Nếu là Admin, gửi kèm user_id đã chọn
   if (state.currentUser?.role === 'admin') {
@@ -892,8 +1286,18 @@ async function handleSaveModalLog(e) {
     }
   }
 
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  const originalHtml = submitBtn ? submitBtn.innerHTML : '';
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i> Đang lưu...';
+  }
+
   const url = editingId ? `/api/logs/${editingId}` : '/api/logs';
   const method = editingId ? 'PUT' : 'POST';
+
+  let saveSuccess = false;
+  let successMsg = 'Đã lưu nhật ký thành công!';
 
   try {
     const res = await fetch(url, {
@@ -908,15 +1312,28 @@ async function handleSaveModalLog(e) {
       return;
     }
 
-    showToast(data.message || 'Đã lưu nhật ký thành công!', 'success');
-    resetModalLogForm();
-
-    // Tải lại dữ liệu tháng và cập nhật lại modal ngày hiện tại
-    await loadCalendar();
-    renderModalDayLogsList(log_date);
-
+    saveSuccess = true;
+    if (data.message) successMsg = data.message;
   } catch (err) {
-    showToast('Lỗi lưu nhật ký: ' + err.message, 'error');
+    showToast('Lỗi kết nối máy chủ: ' + err.message, 'error');
+    return;
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = originalHtml;
+    }
+  }
+
+  // Khi đã lưu thành công: tự động đóng modal và cập nhật lại lịch
+  if (saveSuccess) {
+    showToast(successMsg, 'success');
+    closeDayDetailModal();
+
+    try {
+      await loadCalendar();
+    } catch (e) {
+      console.warn('Cập nhật lịch sau khi lưu gặp lỗi nhẹ:', e);
+    }
   }
 }
 
@@ -1238,7 +1655,9 @@ function openExcelExportModal() {
   const projFilter = document.getElementById('exportProjectFilter');
   projFilter.innerHTML = '<option value="">-- Tất cả các dự án (Mặc định) --</option>';
   if (state.projects && state.projects.length > 0) {
-    state.projects.forEach(p => {
+    const numericSort = (a, b) => (a.code || '').localeCompare((b.code || ''), undefined, { numeric: true, sensitivity: 'base' });
+    const sortedProjects = [...state.projects].sort(numericSort);
+    sortedProjects.forEach(p => {
       const opt = document.createElement('option');
       opt.value = p.id;
       opt.textContent = `[${p.code}] ${p.name}`;
@@ -1341,15 +1760,25 @@ async function handleCustomExcelExport(e) {
 // 6. TAB 3: QUẢN LÝ DỰ ÁN (ADMIN)
 // ------------------------------------------
 async function loadProjectsTable() {
+  const monthInput = document.getElementById('projectMonthFilter');
+  if (monthInput && !monthInput.value) {
+    monthInput.value = new Date().toISOString().slice(0, 7);
+  }
+  const selectedMonth = monthInput ? monthInput.value : new Date().toISOString().slice(0, 7);
+
   try {
-    const res = await fetch('/api/projects');
+    const res = await fetch(`/api/projects?month=${encodeURIComponent(selectedMonth)}`);
     if (!res.ok) return;
     const data = await res.json();
     state.projects = data.projects;
 
+    // Sắp xếp tự nhiên theo mã dự án từ nhỏ đến lớn
+    const numericSort = (a, b) => (a.code || '').localeCompare((b.code || ''), undefined, { numeric: true, sensitivity: 'base' });
+    data.projects.sort(numericSort);
+
     const tbody = document.getElementById('projectsTableBody');
     if (data.projects.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-xs text-slate-400">Chưa có dự án nào. Nhấn 'Thêm Dự Án Mới' để bắt đầu.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="11" class="py-8 text-center text-xs text-slate-400">Chưa có dự án nào. Nhấn 'Thêm Dự Án Mới' để bắt đầu.</td></tr>`;
       return;
     }
 
@@ -1359,39 +1788,89 @@ async function loadProjectsTable() {
       'completed': '<span class="px-2.5 py-1 rounded-full text-xs font-semibold badge-completed"><i class="fa-solid fa-check text-[10px] mr-1"></i>Hoàn thành</span>'
     };
 
-    tbody.innerHTML = data.projects.map(p => `
-      <tr class="hover:bg-slate-50 transition">
-        <td class="py-3.5 px-3 text-xs font-bold text-blue-700">${p.code}</td>
-        <td class="py-3.5 px-3 text-sm font-semibold text-slate-900">${p.name}</td>
-        <td class="py-3.5 px-3 text-xs font-mono text-slate-600">${escapeHtml(p.contract_no || '--')}</td>
-        <td class="py-3.5 px-3 text-xs text-slate-500 max-w-xs truncate" title="${escapeHtml(p.description || '')}">${escapeHtml(p.description || '--')}</td>
-        <td class="py-3.5 px-3 text-center">${statusBadge[p.status] || p.status}</td>
-        <td class="py-3.5 px-3 text-right text-xs font-bold text-slate-800">
-          ${(p.total_hours || 0).toFixed(1)}h
-          <div class="text-[10px] text-slate-400 font-normal">${p.total_members || 0} nhân sự</div>
-        </td>
-        <td class="py-3.5 px-3 text-center">
-          <div class="flex items-center justify-center space-x-2">
-            <button onclick="openEditProjectModal(${p.id})" title="Chỉnh sửa" class="p-1.5 text-slate-500 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition">
-              <i class="fa-solid fa-pen-to-square"></i>
-            </button>
-            <button onclick="deleteProject(${p.id}, '${escapeHtml(p.code)}')" title="Xóa" class="p-1.5 text-slate-500 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition">
-              <i class="fa-solid fa-trash"></i>
-            </button>
+    tbody.innerHTML = data.projects.map(p => {
+      // Cột chi tiết giờ công nhân viên trong tháng
+      let monthHoursHtml = '';
+      if (p.month_users && p.month_users.length > 0) {
+        const userTags = p.month_users.map(u => `
+          <span class="inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-900 border border-indigo-200 shadow-2xs mr-1 mb-1" title="Nhân viên: ${escapeHtml(u.full_name)} (${u.username})">
+            <i class="fa-solid fa-user text-[9px] mr-1 text-indigo-500"></i>
+            <span>${escapeHtml(u.full_name)}:</span>
+            <span class="ml-1 text-blue-700 font-extrabold">${u.user_hours.toFixed(1)}h</span>
+            ${u.user_ot_hours > 0 ? `<span class="ml-0.5 text-amber-700 font-bold text-[10px]">(+${u.user_ot_hours.toFixed(1)} OT)</span>` : ''}
+          </span>
+        `).join('');
+
+        monthHoursHtml = `
+          <div class="py-1">
+            <div class="flex items-center gap-1.5 mb-1.5">
+              <span class="text-xs font-bold text-slate-700">Tổng tháng:</span>
+              <span class="text-xs font-extrabold text-blue-700 bg-blue-100/80 px-2 py-0.5 rounded-md border border-blue-200">
+                ${p.month_total_hours.toFixed(1)}h
+              </span>
+              ${p.month_total_ot_hours > 0 ? `
+                <span class="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded border border-amber-200">
+                  +${p.month_total_ot_hours.toFixed(1)}h OT
+                </span>
+              ` : ''}
+              <span class="text-[10px] text-slate-400 font-medium">(${p.month_users.length} người)</span>
+            </div>
+            <div class="flex flex-wrap items-center">
+              ${userTags}
+            </div>
           </div>
-        </td>
-      </tr>
-    `).join('');
+        `;
+      } else {
+        monthHoursHtml = `<span class="text-xs text-slate-400 italic">Chưa có giờ công trong tháng</span>`;
+      }
+
+      return `
+        <tr class="hover:bg-slate-50 transition">
+          <td class="py-3.5 px-3 text-xs font-bold text-blue-700">${p.code}</td>
+          <td class="py-3.5 px-3 text-sm font-semibold text-slate-900">${p.name}</td>
+          <td class="py-3.5 px-3 text-xs font-mono text-slate-600">${escapeHtml(p.contract_no || '--')}</td>
+          <td class="py-3.5 px-3 text-xs text-purple-900 font-medium" title="Chủ nhiệm dự án: ${escapeHtml(p.manager || '')}">${escapeHtml(p.manager || '--')}</td>
+          <td class="py-3.5 px-3 text-xs text-blue-900 font-medium" title="Chủ trì thiết kế: ${escapeHtml(p.design_lead || '')}">${escapeHtml(p.design_lead || '--')}</td>
+          <td class="py-3.5 px-3 text-xs text-teal-900 font-medium" title="Thiết kế: ${escapeHtml(p.designer || '')}">${escapeHtml(p.designer || '--')}</td>
+          <td class="py-3.5 px-3 text-xs text-amber-900 font-medium" title="Hỗ trợ: ${escapeHtml(p.supporter || '')}">${escapeHtml(p.supporter || '--')}</td>
+          <td class="py-3.5 px-3 text-center">${statusBadge[p.status] || p.status}</td>
+          <td class="py-3.5 px-3">${monthHoursHtml}</td>
+          <td class="py-3.5 px-3 text-right text-xs font-bold text-slate-800">
+            ${(p.total_hours || 0).toFixed(1)}h
+            <div class="text-[10px] text-slate-400 font-normal">${p.total_members || 0} nhân sự</div>
+          </td>
+          <td class="py-3.5 px-3 text-center">
+            <div class="flex items-center justify-center space-x-2">
+              <button onclick="openEditProjectModal(${p.id})" title="Chỉnh sửa" class="p-1.5 text-slate-500 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition">
+                <i class="fa-solid fa-pen-to-square"></i>
+              </button>
+              <button onclick="deleteProject(${p.id}, '${escapeHtml(p.code)}')" title="Xóa" class="p-1.5 text-slate-500 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
   } catch (err) {
     console.error('Lỗi tải danh sách dự án:', err);
   }
 }
 
 function openCreateProjectModal() {
+  if (!userListCache || userListCache.length === 0) {
+    loadUsersDropdowns();
+  } else {
+    populateProjectRoleDropdowns();
+  }
   document.getElementById('projectModalId').value = '';
   document.getElementById('projectCodeInput').value = '';
   document.getElementById('projectNameInput').value = '';
   document.getElementById('projectContractInput').value = '';
+  setProjectRoleUsers('manager', '');
+  setProjectRoleUsers('design_lead', '');
+  setProjectRoleUsers('designer', '');
+  setProjectRoleUsers('supporter', '');
   document.getElementById('projectDescInput').value = '';
   document.getElementById('projectStatusSelect').value = 'active';
 
@@ -1403,10 +1882,19 @@ function openEditProjectModal(id) {
   const p = state.projects.find(x => x.id === id);
   if (!p) return;
 
+  if (!userListCache || userListCache.length === 0) {
+    loadUsersDropdowns();
+  } else {
+    populateProjectRoleDropdowns();
+  }
   document.getElementById('projectModalId').value = p.id;
   document.getElementById('projectCodeInput').value = p.code;
   document.getElementById('projectNameInput').value = p.name;
   document.getElementById('projectContractInput').value = p.contract_no || '';
+  setProjectRoleUsers('manager', p.manager || '');
+  setProjectRoleUsers('design_lead', p.design_lead || '');
+  setProjectRoleUsers('designer', p.designer || '');
+  setProjectRoleUsers('supporter', p.supporter || '');
   document.getElementById('projectDescInput').value = p.description || '';
   document.getElementById('projectStatusSelect').value = p.status;
 
@@ -1424,10 +1912,14 @@ async function handleSaveProject(e) {
   const code = document.getElementById('projectCodeInput').value.trim();
   const name = document.getElementById('projectNameInput').value.trim();
   const contract_no = document.getElementById('projectContractInput').value.trim();
+  const manager = document.getElementById('projectManagerInput').value.trim();
+  const design_lead = document.getElementById('projectDesignLeadInput').value.trim();
+  const designer = document.getElementById('projectDesignerInput').value.trim();
+  const supporter = document.getElementById('projectSupporterInput').value.trim();
   const description = document.getElementById('projectDescInput').value.trim();
   const status = document.getElementById('projectStatusSelect').value;
 
-  const payload = { code, name, contract_no, description, status };
+  const payload = { code, name, contract_no, manager, design_lead, designer, supporter, description, status };
   const url = id ? `/api/projects/${id}` : '/api/projects';
   const method = id ? 'PUT' : 'POST';
 
@@ -1448,6 +1940,9 @@ async function handleSaveProject(e) {
     closeProjectModal();
     loadProjectsTable();
     loadProjectsList();
+    if (state.projectViewMode === 'matrix') {
+      renderTimesheetMatrix();
+    }
   } catch (err) {
     showToast('Lỗi lưu dự án: ' + err.message, 'error');
   }
@@ -1468,8 +1963,285 @@ async function deleteProject(id, code) {
     showToast(data.message || 'Đã xóa dự án!', 'success');
     loadProjectsTable();
     loadProjectsList();
+    if (state.projectViewMode === 'matrix') {
+      renderTimesheetMatrix();
+    }
   } catch (err) {
     showToast('Lỗi xóa dự án: ' + err.message, 'error');
+  }
+}
+
+// ------------------------------------------
+// 6.1 CHẾ ĐỘ XEM MA TRẬN GIỜ CÔNG DỰ ÁN (ADMIN)
+// ------------------------------------------
+
+// Chuyển đổi giữa chế độ Danh sách và Bảng Ma trận
+function switchProjectViewMode(mode) {
+  state.projectViewMode = mode;
+  const listBtn = document.getElementById('projectViewModeListBtn');
+  const matrixBtn = document.getElementById('projectViewModeMatrixBtn');
+  const listContainer = document.getElementById('projectsListViewContainer');
+  const matrixContainer = document.getElementById('projectsMatrixViewContainer');
+
+  if (mode === 'matrix') {
+    if (listContainer) listContainer.classList.add('hidden');
+    if (matrixContainer) matrixContainer.classList.remove('hidden');
+
+    if (matrixBtn) {
+      matrixBtn.className = 'px-3 py-1.5 text-xs font-bold rounded-lg transition shadow-xs bg-white text-blue-700 flex items-center space-x-1.5';
+    }
+    if (listBtn) {
+      listBtn.className = 'px-3 py-1.5 text-xs font-bold rounded-lg transition text-slate-600 hover:text-slate-900 flex items-center space-x-1.5';
+    }
+
+    renderTimesheetMatrix();
+  } else {
+    if (matrixContainer) matrixContainer.classList.add('hidden');
+    if (listContainer) listContainer.classList.remove('hidden');
+
+    if (listBtn) {
+      listBtn.className = 'px-3 py-1.5 text-xs font-bold rounded-lg transition shadow-xs bg-white text-blue-700 flex items-center space-x-1.5';
+    }
+    if (matrixBtn) {
+      matrixBtn.className = 'px-3 py-1.5 text-xs font-bold rounded-lg transition text-slate-600 hover:text-slate-900 flex items-center space-x-1.5';
+    }
+
+    loadProjectsTable();
+  }
+}
+
+// Xử lý khi thay đổi tháng xem tại Tab Dự án
+function handleProjectMonthChange() {
+  if (state.projectViewMode === 'matrix') {
+    renderTimesheetMatrix();
+  } else {
+    loadProjectsTable();
+  }
+}
+
+// Render Bảng Ma Trận Giờ Công (Timesheet Matrix)
+async function renderTimesheetMatrix(forcedMonth) {
+  const monthInput = document.getElementById('projectMonthFilter');
+  if (monthInput && !monthInput.value) {
+    monthInput.value = new Date().toISOString().slice(0, 7);
+  }
+  const selectedMonth = forcedMonth || (monthInput ? monthInput.value : new Date().toISOString().slice(0, 7));
+
+  // Cập nhật badge tiêu đề tháng
+  const parts = selectedMonth.split('-');
+  const y = parts[0];
+  const m = parts[1];
+  const titleBadge = document.getElementById('matrixMonthTitleBadge');
+  if (titleBadge) {
+    titleBadge.textContent = `Tháng ${m}/${y}`;
+  }
+
+  const thead = document.getElementById('matrixTableThead');
+  const tbody = document.getElementById('matrixTableTbody');
+  const tfoot = document.getElementById('matrixTableTfoot');
+
+  if (!tbody) return;
+  tbody.innerHTML = `<tr><td colspan="45" class="py-12 text-center text-slate-400 font-medium"><i class="fa-solid fa-spinner fa-spin mr-2"></i> Đang tải dữ liệu ma trận giờ công tháng ${m}/${y}...</td></tr>`;
+
+  try {
+    const res = await fetch(`/api/reports/timesheet-matrix?month=${encodeURIComponent(selectedMonth)}`);
+    if (!res.ok) {
+      tbody.innerHTML = `<tr><td colspan="45" class="py-8 text-center text-rose-500 font-medium">Không thể tải dữ liệu ma trận (Mã lỗi: ${res.status})</td></tr>`;
+      return;
+    }
+
+    const data = await res.json();
+    state.matrixData = data;
+
+    // Cập nhật các badge tổng
+    const totalHoursBadge = document.getElementById('matrixTotalHoursBadge');
+    if (totalHoursBadge) {
+      totalHoursBadge.textContent = `Tổng: ${(data.grand_total_hours || 0).toFixed(1)}h`;
+    }
+    const totalOtBadge = document.getElementById('matrixTotalOtBadge');
+    if (totalOtBadge) {
+      totalOtBadge.textContent = `+${(data.grand_total_ot_hours || 0).toFixed(1)}h OT`;
+    }
+    const projectCountLabel = document.getElementById('matrixProjectCountLabel');
+    if (projectCountLabel) {
+      projectCountLabel.textContent = `${data.projects.length} dự án`;
+    }
+
+    // 1. Dựng Thead 2 tầng
+    // Tầng 1: STT, Số dự án, Tên dự án & Số HĐ, Các phòng ban (colspan), Cột Tổng cộng
+    let theadRow1 = `
+      <tr class="text-xs uppercase bg-slate-100 text-slate-700 select-none">
+        <th rowspan="2" class="py-2.5 px-2 text-center font-extrabold border-r border-b-2 border-slate-300 bg-slate-100 sticky left-0 z-30" style="width: 38px; min-width: 38px;">STT</th>
+        <th rowspan="2" class="py-2.5 px-2 text-center font-extrabold border-r border-b-2 border-slate-300 bg-slate-100 sticky left-[38px] z-30" style="width: 75px; min-width: 75px;">Số Dự Án</th>
+        <th rowspan="2" class="py-2.5 px-3 text-left font-extrabold border-r border-b-2 border-slate-300 bg-slate-100 sticky left-[113px] z-30 shadow-sm" style="width: 220px; min-width: 200px; max-width: 240px;">Tên Dự Án / Số HĐ</th>
+    `;
+
+    data.departments.forEach(dept => {
+      const style = dept.style || { bg: 'bg-slate-100', text: 'text-slate-800', border: 'border-slate-300' };
+      theadRow1 += `
+        <th colspan="${dept.count}" class="py-2 px-2 text-center font-extrabold tracking-wide border-r border-b ${style.border} ${style.bg} ${style.text}">
+          ${escapeHtml(dept.name)} <span class="text-[10px] font-normal opacity-75">(${dept.count})</span>
+        </th>
+      `;
+    });
+
+    theadRow1 += `
+        <th rowspan="2" class="py-2.5 px-2 text-center font-black border-l border-b-2 border-slate-300 bg-slate-200 text-slate-900 sticky right-0 z-30" style="width: 85px; min-width: 85px;">Tổng Cộng</th>
+      </tr>
+    `;
+
+    // Tầng 2: Tên của từng nhân viên theo thứ tự
+    let theadRow2 = `<tr class="text-[11px] bg-slate-50 text-slate-600 border-b-2 border-slate-300 select-none">`;
+    data.users.forEach(u => {
+      theadRow2 += `
+        <th class="py-2 px-1.5 text-center font-bold border-r border-slate-200 whitespace-nowrap min-w-[85px] max-w-[105px] truncate hover:bg-blue-50 transition" title="${escapeHtml(u.full_name)} (${escapeHtml(u.department || '')})">
+          ${escapeHtml(u.full_name)}
+        </th>
+      `;
+    });
+    theadRow2 += `</tr>`;
+
+    thead.innerHTML = theadRow1 + theadRow2;
+
+    // 2. Dựng Tfoot (Tổng cộng theo cột nhân viên)
+    let tfootHtml = `
+      <tr class="text-xs font-bold bg-slate-100 text-slate-900 border-t-2 border-slate-300">
+        <td colspan="3" class="py-2.5 px-3 text-right uppercase tracking-wider font-extrabold text-slate-800 bg-slate-200 sticky left-0 z-30 shadow-sm" style="left: 0; min-width: 333px;">
+          TỔNG CỘNG THEO NHÂN VIÊN:
+        </td>
+    `;
+
+    data.users.forEach(u => {
+      const colTot = data.col_totals[u.id] || { hours: 0, ot_hours: 0 };
+      const hoursStr = colTot.hours > 0 ? (Number.isInteger(colTot.hours) ? colTot.hours : colTot.hours.toFixed(1)) + 'h' : '0h';
+      const otHtml = colTot.ot_hours > 0 ? `<div class="text-[9px] text-amber-700 font-bold leading-none mt-0.5">+${Number.isInteger(colTot.ot_hours) ? colTot.ot_hours : colTot.ot_hours.toFixed(1)} OT</div>` : '';
+
+      tfootHtml += `
+        <td class="py-2.5 px-1 text-center font-extrabold border-r border-slate-300 ${colTot.hours > 0 ? 'bg-indigo-50/70 text-indigo-900' : 'text-slate-400'}">
+          <span class="text-xs">${hoursStr}</span>
+          ${otHtml}
+        </td>
+      `;
+    });
+
+    tfootHtml += `
+        <td class="py-2.5 px-2 text-center font-black text-xs text-white bg-blue-700 border-l border-blue-800 sticky right-0 z-30 shadow-md">
+          <div class="leading-tight">${(data.grand_total_hours || 0).toFixed(1)}h</div>
+          ${data.grand_total_ot_hours > 0 ? `<div class="text-[9px] text-amber-200 font-bold leading-none mt-0.5">+${(data.grand_total_ot_hours || 0).toFixed(1)} OT</div>` : ''}
+        </td>
+      </tr>
+    `;
+
+    tfoot.innerHTML = tfootHtml;
+
+    // 3. Dựng Tbody với toàn bộ dự án
+    renderMatrixTableRows(data.projects, data.users);
+
+  } catch (err) {
+    console.error('Lỗi tải dữ liệu ma trận:', err);
+    tbody.innerHTML = `<tr><td colspan="45" class="py-8 text-center text-rose-500 font-medium">Lỗi kết nối máy chủ khi tải ma trận: ${err.message}</td></tr>`;
+  }
+}
+
+// Render các hàng dự án trong ma trận
+function renderMatrixTableRows(projects, users) {
+  const tbody = document.getElementById('matrixTableTbody');
+  if (!tbody) return;
+
+  if (!projects || projects.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="45" class="py-8 text-center text-slate-400 font-medium">Không tìm thấy dự án nào phù hợp</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = projects.map((p, idx) => {
+    // 3 cột cố định ghim bên trái: STT, Số dự án, Tên dự án / HĐ
+    let rowHtml = `
+      <tr class="hover:bg-slate-50 transition border-b border-slate-100 group">
+        <td class="py-2 px-2 text-center font-bold text-slate-500 border-r border-slate-200 bg-white group-hover:bg-slate-50 sticky left-0 z-10" style="width: 38px; min-width: 38px;">
+          ${idx + 1}
+        </td>
+        <td class="py-2 px-2 text-center font-bold text-blue-700 font-mono border-r border-slate-200 bg-white group-hover:bg-slate-50 sticky left-[38px] z-10 whitespace-nowrap" style="width: 75px; min-width: 75px;">
+          ${escapeHtml(p.code)}
+        </td>
+        <td class="py-2 px-3 border-r border-slate-200 bg-white group-hover:bg-slate-50 sticky left-[113px] z-10 shadow-sm" style="width: 220px; min-width: 200px; max-width: 240px;">
+          <div class="font-bold text-slate-800 text-xs truncate" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</div>
+          <div class="text-[10px] text-slate-400 font-mono truncate" title="Số Hợp Đồng: ${escapeHtml(p.contract_no || '-')}">${escapeHtml(p.contract_no || '-')}</div>
+        </td>
+    `;
+
+    // Các cột nhân viên
+    users.forEach(u => {
+      const cell = p.cells ? p.cells[u.id] : null;
+      if (cell && cell.hours > 0) {
+        const hoursDisplay = Number.isInteger(cell.hours) ? cell.hours : cell.hours.toFixed(1);
+        const otHtml = cell.ot_hours > 0 ? `<div class="text-[9px] text-amber-700 font-bold leading-none mt-0.5">+${Number.isInteger(cell.ot_hours) ? cell.ot_hours : cell.ot_hours.toFixed(1)} OT</div>` : '';
+        rowHtml += `
+          <td class="py-2 px-1 text-center border-r border-slate-200 bg-blue-50/50 hover:bg-blue-100 font-bold text-blue-900 transition cursor-default" 
+              title="${escapeHtml(u.full_name)}: ${cell.hours}h - [${escapeHtml(p.code)}] ${escapeHtml(p.name)}${cell.ot_hours > 0 ? ` (+${cell.ot_hours}h OT)` : ''}">
+            <span class="text-xs font-extrabold text-blue-800">${hoursDisplay}</span>
+            ${otHtml}
+          </td>
+        `;
+      } else {
+        rowHtml += `
+          <td class="py-2 px-1 text-center border-r border-slate-100 text-slate-300 font-normal select-none">
+            -
+          </td>
+        `;
+      }
+    });
+
+    // Cột Tổng cộng ghim bên phải
+    const rowHoursDisplay = Number.isInteger(p.total_hours) ? p.total_hours : p.total_hours.toFixed(1);
+    const rowOtHtml = p.total_ot_hours > 0 ? `<div class="text-[9px] text-amber-700 font-bold leading-none mt-0.5">+${Number.isInteger(p.total_ot_hours) ? p.total_ot_hours : p.total_ot_hours.toFixed(1)} OT</div>` : '';
+
+    rowHtml += `
+        <td class="py-2 px-2 text-center border-l border-slate-200 ${p.total_hours > 0 ? 'bg-slate-100 font-black text-blue-800' : 'bg-slate-50 text-slate-400 font-normal'} sticky right-0 z-10" style="width: 85px; min-width: 85px;">
+          <span class="text-xs">${p.total_hours > 0 ? rowHoursDisplay + 'h' : '0h'}</span>
+          ${rowOtHtml}
+        </td>
+      </tr>
+    `;
+
+    return rowHtml;
+  }).join('');
+}
+
+// Tìm kiếm lọc dự án trực tiếp trên bảng ma trận
+function filterMatrixTable() {
+  if (!state.matrixData || !state.matrixData.projects) return;
+  const searchInput = document.getElementById('matrixSearchInput');
+  const kw = searchInput ? searchInput.value.trim().toLowerCase() : '';
+
+  if (!kw) {
+    renderMatrixTableRows(state.matrixData.projects, state.matrixData.users);
+    const label = document.getElementById('matrixProjectCountLabel');
+    if (label) label.textContent = `${state.matrixData.projects.length} dự án`;
+    return;
+  }
+
+  const filtered = state.matrixData.projects.filter(p => {
+    const code = (p.code || '').toLowerCase();
+    const name = (p.name || '').toLowerCase();
+    const contract = (p.contract_no || '').toLowerCase();
+    return code.includes(kw) || name.includes(kw) || contract.includes(kw);
+  });
+
+  renderMatrixTableRows(filtered, state.matrixData.users);
+  const label = document.getElementById('matrixProjectCountLabel');
+  if (label) label.textContent = `Hiển thị ${filtered.length} / ${state.matrixData.projects.length} dự án`;
+}
+
+// Xuất Excel riêng cho Bảng Ma Trận
+async function exportTimesheetMatrixExcel() {
+  const monthInput = document.getElementById('projectMonthFilter');
+  const month = (monthInput && monthInput.value) || document.getElementById('reportMonthSelector')?.value || new Date().toISOString().slice(0, 7);
+  showToast(`Đang kết xuất dữ liệu và tạo file Excel cho tháng ${month}...`, 'info');
+  try {
+    await downloadFileFromUrl(`/api/reports/export-excel?month=${month}`, `HPA_Timesheet_Matrix_${month}.xlsx`);
+    showToast(`Đã xuất và tải file Báo cáo Ma trận Giờ công tháng ${month} thành công!`, 'success');
+  } catch (err) {
+    showToast('Lỗi khi xuất file Excel: ' + err.message, 'error');
   }
 }
 

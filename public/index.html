@@ -287,8 +287,8 @@
                   class="px-2.5 py-1 text-xs border border-slate-300 rounded-lg text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500">
               </div>
 
-              <!-- BỘ LỌC NHÂN VIÊN CHO ADMIN TRÊN LỊCH -->
-              <div id="calendarUserFilterWrapper" class="hidden items-center ml-2">
+              <!-- BỘ LỌC NHÂN VIÊN TRÊN LỊCH (ADMIN & NHÂN VIÊN) -->
+              <div id="calendarUserFilterWrapper" class="flex items-center ml-2">
                 <select id="calendarUserFilter" onchange="loadCalendar()"
                   class="px-2.5 py-1 text-xs border border-indigo-200 rounded-lg text-slate-700 font-semibold bg-indigo-50/70 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                   <option value="">-- Tất cả nhân viên --</option>
@@ -317,6 +317,30 @@
               </button>
             </div>
 
+          </div>
+        <!-- KHỐI DỰ ÁN NHÂN VIÊN ĐƯỢC PHÂN CÔNG PHỤ TRÁCH -->
+        <div id="assignedProjectsSection" class="bg-gradient-to-r from-blue-50/70 via-indigo-50/60 to-white rounded-2xl p-4 sm:p-5 border border-indigo-100/90 shadow-sm space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-2.5">
+              <div class="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-sm shadow-xs">
+                <i class="fa-solid fa-folder-user"></i>
+              </div>
+              <div>
+                <h3 class="text-sm font-bold text-slate-900 flex items-center space-x-1.5">
+                  <span>Dự Án Bạn Được Phân Công Phụ Trách</span>
+                  <span id="assignedProjectsCountBadge" class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">0 dự án</span>
+                </h3>
+                <p class="text-xs text-slate-500">Các dự án mà bạn có tên trong danh sách phân công (Chủ nhiệm, Chủ trì, Thiết kế, Hỗ trợ)</p>
+              </div>
+            </div>
+            <button type="button" onclick="toggleAssignedProjectsCollapse()" id="toggleAssignedProjectsBtn" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center space-x-1 transition">
+              <span id="toggleAssignedProjectsText">Thu gọn</span>
+              <i id="toggleAssignedProjectsIcon" class="fa-solid fa-chevron-up text-[10px]"></i>
+            </button>
+          </div>
+
+          <div id="assignedProjectsList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+            <!-- Dynamic render -->
           </div>
         </div>
 
@@ -460,7 +484,7 @@
 
         <!-- BẢNG 1: TỔNG HỢP GIỜ CÔNG THEO TỪNG DỰ ÁN TRONG THÁNG (YÊU CẦU CỐT LÕI) -->
         <div class="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-sm">
-          <div class="flex items-center justify-between mb-4">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
             <div>
               <h3 class="text-base font-bold text-slate-900 flex items-center">
                 <i class="fa-solid fa-table-list text-blue-600 mr-2"></i>
@@ -468,6 +492,12 @@
               </h3>
               <p class="text-xs text-slate-500 mt-0.5">Thống kê chi tiết số giờ, tỷ lệ % và nhân sự tham gia từng dự án</p>
             </div>
+            <button type="button" onclick="switchTab('projects'); switchProjectViewMode('matrix');"
+              class="px-3.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold border border-blue-200 transition flex items-center space-x-1.5 shadow-2xs self-start sm:self-auto">
+              <i class="fa-solid fa-table-cells text-blue-600"></i>
+              <span>Xem Bảng Ma Trận Đầy Đủ</span>
+              <i class="fa-solid fa-arrow-right text-[10px]"></i>
+            </button>
           </div>
 
           <div class="overflow-x-auto">
@@ -533,33 +563,62 @@
       <section id="tabContent-projects" class="hidden space-y-6">
         
         <div class="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-sm">
-          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+          <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
             <div>
               <h2 class="text-lg font-bold text-slate-900 flex items-center">
                 <i class="fa-solid fa-folder-tree text-blue-600 mr-2.5"></i>
-                <span>Danh Sách Dự Án Doanh Nghiệp</span>
+                <span>Quản Lý Dự Án & Ma Trận Giờ Công</span>
               </h2>
-              <p class="text-xs text-slate-500 mt-1">Các dự án 'Đang thực hiện' sẽ tự động hiển thị trong menu để nhân viên ghi nhật ký</p>
+              <p class="text-xs text-slate-500 mt-1">Theo dõi nhân sự phụ trách và bảng ma trận số giờ mỗi nhân viên đã thực hiện theo từng dự án trong tháng</p>
             </div>
 
-            <button onclick="openCreateProjectModal()"
-              class="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-blue-500/20 transition flex items-center justify-center space-x-2">
-              <i class="fa-solid fa-plus text-xs"></i>
-              <span>Thêm Dự Án Mới</span>
-            </button>
+            <div class="flex flex-wrap items-center gap-2.5 sm:gap-3">
+              <!-- Chuyển đổi chế độ xem: Danh sách vs Ma trận -->
+              <div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 shadow-2xs">
+                <button type="button" id="projectViewModeListBtn" onclick="switchProjectViewMode('list')"
+                  class="px-3 py-1.5 text-xs font-bold rounded-lg transition shadow-xs bg-white text-blue-700 flex items-center space-x-1.5">
+                  <i class="fa-solid fa-list text-[11px]"></i>
+                  <span>Danh Sách</span>
+                </button>
+                <button type="button" id="projectViewModeMatrixBtn" onclick="switchProjectViewMode('matrix')"
+                  class="px-3 py-1.5 text-xs font-bold rounded-lg transition text-slate-600 hover:text-slate-900 flex items-center space-x-1.5">
+                  <i class="fa-solid fa-table-cells text-[11px]"></i>
+                  <span>Bảng Ma Trận</span>
+                </button>
+              </div>
+
+              <!-- Bộ chọn tháng xem giờ công dự án -->
+              <div class="flex items-center space-x-1.5 bg-slate-100 p-1.5 rounded-xl border border-slate-200 shadow-2xs">
+                <span class="text-xs font-bold text-slate-700 pl-1.5 flex items-center">
+                  <i class="fa-solid fa-calendar-days text-blue-600 mr-1.5"></i>Tháng xem:
+                </span>
+                <input type="month" id="projectMonthFilter" onchange="handleProjectMonthChange()"
+                  class="px-2.5 py-1 text-xs border border-slate-300 rounded-lg text-slate-800 font-bold bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+              </div>
+
+              <button onclick="openCreateProjectModal()"
+                class="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-blue-500/20 transition flex items-center justify-center space-x-2">
+                <i class="fa-solid fa-plus text-xs"></i>
+                <span>Thêm Dự Án Mới</span>
+              </button>
+            </div>
           </div>
 
-          <!-- Bảng dự án -->
-          <div class="overflow-x-auto">
+          <!-- 1. CHẾ ĐỘ XEM DANH SÁCH THÔNG THƯỜNG -->
+          <div id="projectsListViewContainer" class="overflow-x-auto">
             <table class="w-full text-left text-sm">
               <thead class="text-xs uppercase bg-slate-50 text-slate-500 border-b border-slate-200">
                 <tr>
                   <th class="py-3 px-3">Mã Dự Án</th>
                   <th class="py-3 px-3">Tên Dự Án</th>
                   <th class="py-3 px-3">Số Hợp Đồng</th>
-                  <th class="py-3 px-3">Mô Tả</th>
+                  <th class="py-3 px-3">Chủ Nhiệm DA</th>
+                  <th class="py-3 px-3">Chủ Trì TK</th>
+                  <th class="py-3 px-3">Thiết Kế</th>
+                  <th class="py-3 px-3">Hỗ Trợ</th>
                   <th class="py-3 px-3 text-center">Trạng Thái</th>
-                  <th class="py-3 px-3 text-right">Tổng Giờ Đã Ghi</th>
+                  <th class="py-3 px-3 min-w-[280px]">Giờ Công Nhân Viên Trong Tháng</th>
+                  <th class="py-3 px-3 text-right">Lũy Kế (All-time)</th>
                   <th class="py-3 px-3 text-center">Thao Tác</th>
                 </tr>
               </thead>
@@ -567,6 +626,62 @@
                 <!-- Dynamic render -->
               </tbody>
             </table>
+          </div>
+
+          <!-- 2. CHẾ ĐỘ XEM MA TRẬN GIỜ CÔNG (TIMESHEET MATRIX) -->
+          <div id="projectsMatrixViewContainer" class="hidden space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200/90">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-xs font-bold text-slate-700 flex items-center">
+                  <i class="fa-solid fa-table-cells text-blue-600 mr-1.5"></i>Ma Trận Giờ Công Dự Án:
+                </span>
+                <span id="matrixMonthTitleBadge" class="text-xs font-black text-blue-700 bg-blue-100 px-2.5 py-0.5 rounded-lg border border-blue-200">
+                  Tháng 10/2026
+                </span>
+                <span id="matrixTotalHoursBadge" class="text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-lg border border-emerald-200">
+                  Tổng: 0.0h
+                </span>
+                <span id="matrixTotalOtBadge" class="text-xs font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-lg border border-amber-200">
+                  +0.0h OT
+                </span>
+              </div>
+              
+              <div class="flex items-center space-x-2">
+                <!-- Ô tìm kiếm dự án trên ma trận -->
+                <div class="relative">
+                  <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-slate-400"></i>
+                  <input type="text" id="matrixSearchInput" oninput="filterMatrixTable()"
+                    placeholder="Lọc mã hoặc tên dự án..." 
+                    class="pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-800 font-medium focus:ring-2 focus:ring-blue-500 w-52 shadow-2xs">
+                </div>
+                
+                <button type="button" onclick="exportTimesheetMatrixExcel()" 
+                  class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-2xs transition flex items-center space-x-1.5">
+                  <i class="fa-solid fa-file-excel"></i>
+                  <span>Xuất Excel Ma Trận</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Bảng ma trận cuộn ngang 34 nhân viên và cuộn dọc 52 dự án -->
+            <div class="overflow-x-auto max-h-[720px] rounded-2xl border border-slate-200 shadow-xs relative bg-white">
+              <table id="timesheetMatrixTable" class="w-full text-left text-xs border-separate border-spacing-0">
+                <thead class="sticky top-0 z-20 shadow-sm bg-slate-100" id="matrixTableThead">
+                  <!-- Render dynamic header 2 tầng: Tầng 1 Phòng ban, Tầng 2 Nhân viên -->
+                </thead>
+                <tbody id="matrixTableTbody" class="divide-y divide-slate-100 text-slate-800">
+                  <!-- Render dynamic rows: Dự án x Nhân viên -->
+                </tbody>
+                <tfoot class="sticky bottom-0 z-20 shadow-sm font-bold bg-slate-100 border-t-2 border-slate-300" id="matrixTableTfoot">
+                  <!-- Render dynamic tổng cộng cột từng nhân viên -->
+                </tfoot>
+              </table>
+            </div>
+
+            <div class="text-[11px] text-slate-400 flex items-center justify-between px-1">
+              <span>* Chú thích: Số giờ hiển thị là tổng giờ làm việc thực tế của nhân viên cho từng dự án trong tháng. Cột nhân viên được sắp xếp theo đúng thứ tự từng phòng ban theo mẫu công ty.</span>
+              <span id="matrixProjectCountLabel" class="font-bold text-slate-600">52 dự án</span>
+            </div>
           </div>
         </div>
 
@@ -629,7 +744,7 @@
 
   <!-- MODAL: THÊM / SỬA DỰ ÁN -->
   <div id="projectModal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 border border-slate-200">
+    <div class="bg-white rounded-2xl shadow-xl max-w-xl w-full p-6 border border-slate-200 max-h-[90vh] overflow-y-auto">
       <div class="flex items-center justify-between mb-4">
         <h3 id="projectModalTitle" class="text-base font-bold text-slate-900">Thêm Dự Án Mới</h3>
         <button onclick="closeProjectModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-lg"></i></button>
@@ -638,12 +753,21 @@
       <form id="projectForm" class="space-y-4">
         <input type="hidden" id="projectModalId" value="">
 
-        <div>
-          <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Mã Dự Án <span class="text-rose-500">*</span></label>
-          <input type="text" id="projectCodeInput" required
-            class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm uppercase focus:ring-2 focus:ring-blue-500"
-            placeholder="Ví dụ: DA-ECOMMERCE">
-          <p class="text-[11px] text-slate-400 mt-1">Viết hoa, không dấu, dùng để nhận diện dự án</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Mã Dự Án <span class="text-rose-500">*</span></label>
+            <input type="text" id="projectCodeInput" required
+              class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm uppercase focus:ring-2 focus:ring-blue-500"
+              placeholder="Ví dụ: DA-ECOMMERCE">
+            <p class="text-[11px] text-slate-400 mt-1">Viết hoa, không dấu</p>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Số Hợp Đồng</label>
+            <input type="text" id="projectContractInput"
+              class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500"
+              placeholder="Ví dụ: 2808/2019/TVTK/HOANGHUY-HPA">
+          </div>
         </div>
 
         <div>
@@ -653,11 +777,83 @@
             placeholder="Tên đầy đủ của dự án...">
         </div>
 
-        <div>
-          <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Số Hợp Đồng</label>
-          <input type="text" id="projectContractInput"
-            class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500"
-            placeholder="Ví dụ: 2808/2019/TVTK/HOANGHUY-HPA">
+        <!-- 4 THÔNG TIN NHÂN SỰ PHỤ TRÁCH DỰ ÁN (CHỌN TỪ DANH SÁCH NHÂN VIÊN) -->
+        <div class="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="text-xs font-bold text-indigo-900 uppercase tracking-wider flex items-center">
+              <i class="fa-solid fa-users-viewfinder text-indigo-600 mr-1.5"></i>
+              <span>Nhân Sự Phụ Trách Dự Án</span>
+            </div>
+            <span class="text-[11px] text-slate-500 italic">Chọn nhân viên từ menu</span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <!-- Chủ Nhiệm Dự Án -->
+            <div class="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs space-y-1.5">
+              <div class="flex items-center justify-between">
+                <label class="block text-[11px] font-bold text-purple-900">
+                  <i class="fa-solid fa-crown text-[10px] text-purple-600 mr-1"></i>Chủ Nhiệm Dự Án
+                </label>
+                <span id="projectManagerCount" class="text-[10px] text-slate-400">0 người</span>
+              </div>
+              <input type="hidden" id="projectManagerInput" value="">
+              <div id="projectManagerTags" class="flex flex-wrap gap-1 min-h-[24px]"></div>
+              <select id="projectManagerSelect" onchange="addProjectRoleUser('manager', this.value); this.value='';"
+                class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-700 focus:bg-white focus:ring-2 focus:ring-purple-500">
+                <option value="">+ Chọn nhân viên...</option>
+              </select>
+            </div>
+
+            <!-- Chủ Trì Thiết Kế -->
+            <div class="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs space-y-1.5">
+              <div class="flex items-center justify-between">
+                <label class="block text-[11px] font-bold text-blue-900">
+                  <i class="fa-solid fa-compass-drafting text-[10px] text-blue-600 mr-1"></i>Chủ Trì Thiết Kế
+                </label>
+                <span id="projectDesignLeadCount" class="text-[10px] text-slate-400">0 người</span>
+              </div>
+              <input type="hidden" id="projectDesignLeadInput" value="">
+              <div id="projectDesignLeadTags" class="flex flex-wrap gap-1 min-h-[24px]"></div>
+              <select id="projectDesignLeadSelect" onchange="addProjectRoleUser('design_lead', this.value); this.value='';"
+                class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-700 focus:bg-white focus:ring-2 focus:ring-blue-500">
+                <option value="">+ Chọn nhân viên...</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <!-- Thiết Kế -->
+            <div class="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs space-y-1.5">
+              <div class="flex items-center justify-between">
+                <label class="block text-[11px] font-bold text-teal-900">
+                  <i class="fa-solid fa-pen-ruler text-[10px] text-teal-600 mr-1"></i>Thiết Kế
+                </label>
+                <span id="projectDesignerCount" class="text-[10px] text-slate-400">0 người</span>
+              </div>
+              <input type="hidden" id="projectDesignerInput" value="">
+              <div id="projectDesignerTags" class="flex flex-wrap gap-1 min-h-[24px]"></div>
+              <select id="projectDesignerSelect" onchange="addProjectRoleUser('designer', this.value); this.value='';"
+                class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-700 focus:bg-white focus:ring-2 focus:ring-teal-500">
+                <option value="">+ Chọn nhân viên...</option>
+              </select>
+            </div>
+
+            <!-- Hỗ Trợ -->
+            <div class="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs space-y-1.5">
+              <div class="flex items-center justify-between">
+                <label class="block text-[11px] font-bold text-amber-900">
+                  <i class="fa-solid fa-handshake-angle text-[10px] text-amber-600 mr-1"></i>Hỗ Trợ
+                </label>
+                <span id="projectSupporterCount" class="text-[10px] text-slate-400">0 người</span>
+              </div>
+              <input type="hidden" id="projectSupporterInput" value="">
+              <div id="projectSupporterTags" class="flex flex-wrap gap-1 min-h-[24px]"></div>
+              <select id="projectSupporterSelect" onchange="addProjectRoleUser('supporter', this.value); this.value='';"
+                class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-700 focus:bg-white focus:ring-2 focus:ring-amber-500">
+                <option value="">+ Chọn nhân viên...</option>
+              </select>
+            </div>
+          </div>
         </div>
 
         <div>
@@ -671,7 +867,7 @@
 
         <div>
           <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Mô Tả Dự Án</label>
-          <textarea id="projectDescInput" rows="3" class="w-full p-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500" placeholder="Mục tiêu hoặc phạm vi công việc dự án..."></textarea>
+          <textarea id="projectDescInput" rows="2" class="w-full p-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500" placeholder="Mục tiêu hoặc phạm vi công việc dự án..."></textarea>
         </div>
 
         <div class="flex items-center justify-end space-x-2 pt-2">
@@ -863,6 +1059,20 @@
             </select>
           </div>
 
+          <!-- CỤM CHỌN NHANH DỰ ÁN ĐÃ GHI GẦN ĐÂY / ĐƯỢC PHÂN CÔNG -->
+          <div id="quickRecentProjectsWrapper" class="hidden p-2.5 bg-blue-50/70 border border-blue-200/70 rounded-xl space-y-1.5">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-bold text-blue-900 uppercase tracking-wider flex items-center">
+                <i class="fa-solid fa-bolt text-amber-500 mr-1.5 text-xs"></i>
+                Dự Án Gần Đây / Được Phân Công:
+              </span>
+              <span class="text-[10px] text-blue-600 font-medium">Bấm mã để chọn nhanh</span>
+            </div>
+            <div id="quickRecentProjectsList" class="flex flex-wrap gap-1.5 pt-0.5">
+              <!-- Render pills -->
+            </div>
+          </div>
+
           <!-- Dropdown Chọn Tên Dự Án (Từ danh sách admin cung cấp) -->
           <div>
             <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
@@ -945,14 +1155,28 @@
             </div>
           </div>
 
-          <!-- Mô tả công việc -->
+          <!-- Thể Loại Công Việc (4 thể loại cố định) -->
           <div>
             <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-              Nội Dung Công Việc Đã Làm <span class="text-rose-500">*</span>
+              Thể Loại Công Việc <span class="text-rose-500">*</span>
             </label>
-            <textarea id="modalDescInput" rows="2" required
+            <select id="modalWorkRoleSelect" required
+              class="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 transition shadow-sm">
+              <option value="Chủ nhiệm dự án">Chủ nhiệm dự án</option>
+              <option value="Chủ trì thiết kế">Chủ trì thiết kế</option>
+              <option value="Thiết kế" selected>Thiết kế</option>
+              <option value="Hỗ trợ">Hỗ trợ</option>
+            </select>
+          </div>
+
+          <!-- Mô tả công việc (Tùy chọn) -->
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+              Nội Dung Công Việc Đã Làm <span class="text-slate-400 font-normal lowercase">(tùy chọn)</span>
+            </label>
+            <textarea id="modalDescInput" rows="2"
               class="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Ghi chú cụ thể các đầu việc bạn đã thực hiện trong dự án này..."></textarea>
+              placeholder="Ghi chú cụ thể các đầu việc bạn đã thực hiện trong dự án này (nếu có, không bắt buộc)..."></textarea>
           </div>
 
           <!-- Nút Lưu / Hủy chế độ sửa -->

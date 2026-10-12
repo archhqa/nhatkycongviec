@@ -12,6 +12,7 @@ router.get('/', (req, res) => {
   let query = `
     SELECT 
       wl.id, wl.user_id, wl.project_id, wl.log_date, wl.hours, wl.description,
+      COALESCE(wl.work_role, 'Thiết kế') AS work_role,
       COALESCE(wl.ot_hours, 0) AS ot_hours,
       COALESCE(wl.ot_from_time, '') AS ot_from_time,
       COALESCE(wl.ot_to_time, '') AS ot_to_time,
@@ -26,11 +27,8 @@ router.get('/', (req, res) => {
   `;
   const params = [];
 
-  // Phân quyền: nếu là nhân viên, chỉ được xem log của chính mình
-  if (req.user.role !== 'admin') {
-    query += ' AND wl.user_id = ?';
-    params.push(req.user.id);
-  } else if (user_id) {
+  // Cho phép xem nhật ký của tất cả thành viên, hoặc lọc theo nhân viên cụ thể nếu có truyền user_id
+  if (user_id) {
     query += ' AND wl.user_id = ?';
     params.push(user_id);
   }
@@ -63,6 +61,7 @@ router.get('/daily-summary', (req, res) => {
   const logs = db.prepare(`
     SELECT 
       wl.id, wl.user_id, wl.project_id, wl.log_date, wl.hours, wl.description,
+      COALESCE(wl.work_role, 'Thiết kế') AS work_role,
       COALESCE(wl.ot_hours, 0) AS ot_hours,
       COALESCE(wl.ot_from_time, '') AS ot_from_time,
       COALESCE(wl.ot_to_time, '') AS ot_to_time,
@@ -85,12 +84,33 @@ router.get('/daily-summary', (req, res) => {
   });
 });
 
+// Lấy danh sách các mã dự án mà người dùng đã từng ghi gần đây (để chọn nhanh)
+router.get('/recent-projects', (req, res) => {
+  const targetUserId = (req.user.role === 'admin' && req.query.user_id) ? parseInt(req.query.user_id) : req.user.id;
+  try {
+    const recentProjects = db.prepare(`
+      SELECT p.id, p.code, p.name, p.contract_no, MAX(wl.id) as max_id
+      FROM work_logs wl
+      JOIN projects p ON wl.project_id = p.id
+      WHERE wl.user_id = ?
+      GROUP BY p.id
+      ORDER BY max_id DESC
+      LIMIT 8
+    `).all(targetUserId);
+
+    res.json({ recent_projects: recentProjects });
+  } catch (err) {
+    res.status(500).json({ error: 'Lỗi tải dự án gần đây: ' + err.message });
+  }
+});
+
 // Thêm nhật ký công việc mới
 router.post('/', (req, res) => {
-  const { project_id, log_date, hours, description, ot_hours, ot_from_time, ot_to_time, ot_reason, user_id } = req.body;
+  const { project_id, log_date, hours, description, ot_hours, ot_from_time, ot_to_time, ot_reason, user_id, work_role } = req.body;
 
-  if (!project_id || !log_date || hours === undefined || !description) {
-    return res.status(400).json({ error: 'Vui lòng điền đầy đủ: Dự án, Ngày làm việc, Số giờ và Mô tả công việc.' });
+  // "Nội dung công việc đã làm" không nhất thiết cần điền (tùy chọn)
+  if (!project_id || !log_date || hours === undefined) {
+    return res.status(400).json({ error: 'Vui lòng chọn Dự án, Ngày làm việc và Số giờ làm việc.' });
   }
 
   const numHours = parseFloat(hours);
@@ -102,6 +122,10 @@ router.post('/', (req, res) => {
   if (isNaN(numOtHours) || numOtHours < 0 || numOtHours > 24) {
     return res.status(400).json({ error: 'Số giờ làm thêm (OT) không hợp lệ (từ 0 đến 24 giờ).' });
   }
+
+  // 4 thể loại công việc cố định
+  const validRoles = ['Chủ nhiệm dự án', 'Chủ trì thiết kế', 'Thiết kế', 'Hỗ trợ'];
+  const cleanWorkRole = validRoles.includes(work_role) ? work_role : 'Thiết kế';
 
   // Xác định nhân viên thực hiện (Admin có quyền chọn nhân viên khác)
   const targetUserId = (req.user.role === 'admin' && user_id) ? parseInt(user_id) : req.user.id;
@@ -130,19 +154,20 @@ router.post('/', (req, res) => {
 
   try {
     const stmt = db.prepare(`
-      INSERT INTO work_logs (user_id, project_id, log_date, hours, description, ot_hours, ot_from_time, ot_to_time, ot_reason)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO work_logs (user_id, project_id, log_date, hours, description, ot_hours, ot_from_time, ot_to_time, ot_reason, work_role)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const info = stmt.run(
       targetUserId,
       project_id,
       log_date,
       numHours,
-      description.trim(),
+      (description || '').trim(),
       numOtHours,
       (ot_from_time || '').trim(),
       (ot_to_time || '').trim(),
-      (ot_reason || '').trim()
+      (ot_reason || '').trim(),
+      cleanWorkRole
     );
 
     const createdLog = db.prepare(`
@@ -168,7 +193,7 @@ router.post('/', (req, res) => {
 // Sửa nhật ký công việc
 router.put('/:id', (req, res) => {
   const { id } = req.params;
-  const { project_id, log_date, hours, description, ot_hours, ot_from_time, ot_to_time, ot_reason, user_id } = req.body;
+  const { project_id, log_date, hours, description, ot_hours, ot_from_time, ot_to_time, ot_reason, user_id, work_role } = req.body;
 
   const log = db.prepare('SELECT * FROM work_logs WHERE id = ?').get(id);
   if (!log) {
@@ -190,6 +215,9 @@ router.put('/:id', (req, res) => {
     return res.status(400).json({ error: 'Số giờ làm thêm (OT) không hợp lệ (từ 0 đến 24 giờ).' });
   }
 
+  const validRoles = ['Chủ nhiệm dự án', 'Chủ trì thiết kế', 'Thiết kế', 'Hỗ trợ'];
+  const targetWorkRole = work_role && validRoles.includes(work_role) ? work_role : (log.work_role || 'Thiết kế');
+
   const targetProjectId = project_id || log.project_id;
   const project = db.prepare('SELECT id, status FROM projects WHERE id = ?').get(targetProjectId);
   if (!project) {
@@ -207,10 +235,10 @@ router.put('/:id', (req, res) => {
     db.prepare(`
       UPDATE work_logs 
       SET user_id = ?, project_id = ?, log_date = ?, hours = ?, description = ?, 
-          ot_hours = ?, ot_from_time = ?, ot_to_time = ?, ot_reason = ?,
+          ot_hours = ?, ot_from_time = ?, ot_to_time = ?, ot_reason = ?, work_role = ?,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(targetUserId, targetProjectId, targetDate, numHours, targetDesc, numOtHours, targetOtFrom, targetOtTo, targetOtReason, id);
+    `).run(targetUserId, targetProjectId, targetDate, numHours, targetDesc, numOtHours, targetOtFrom, targetOtTo, targetOtReason, targetWorkRole, id);
 
     const updatedLog = db.prepare(`
       SELECT 

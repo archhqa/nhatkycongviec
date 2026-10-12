@@ -28,17 +28,24 @@ function initDatabase() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS projects (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      code TEXT UNIQUE NOT NULL,
+      code TEXT NOT NULL,
       name TEXT NOT NULL,
       contract_no TEXT DEFAULT '',
       description TEXT,
       status TEXT NOT NULL DEFAULT 'active',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      manager TEXT DEFAULT '',
+      design_lead TEXT DEFAULT '',
+      designer TEXT DEFAULT '',
+      supporter TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(code, name)
     );
   `);
-  try {
-    db.exec("ALTER TABLE projects ADD COLUMN contract_no TEXT DEFAULT ''");
-  } catch (e) {}
+  try { db.exec("ALTER TABLE projects ADD COLUMN contract_no TEXT DEFAULT ''"); } catch (e) {}
+  try { db.exec("ALTER TABLE projects ADD COLUMN manager TEXT DEFAULT ''"); } catch (e) {}
+  try { db.exec("ALTER TABLE projects ADD COLUMN design_lead TEXT DEFAULT ''"); } catch (e) {}
+  try { db.exec("ALTER TABLE projects ADD COLUMN designer TEXT DEFAULT ''"); } catch (e) {}
+  try { db.exec("ALTER TABLE projects ADD COLUMN supporter TEXT DEFAULT ''"); } catch (e) {}
 
   // Tạo bảng nhật ký làm việc
   db.exec(`
@@ -49,6 +56,7 @@ function initDatabase() {
       log_date TEXT NOT NULL,
       hours REAL NOT NULL,
       description TEXT NOT NULL,
+      work_role TEXT DEFAULT 'Thiết kế',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -56,18 +64,11 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_work_logs_user ON work_logs(user_id);
     CREATE INDEX IF NOT EXISTS idx_work_logs_project ON work_logs(project_id);
   `);
-  try {
-    db.exec("ALTER TABLE work_logs ADD COLUMN ot_hours REAL DEFAULT 0");
-  } catch (e) {}
-  try {
-    db.exec("ALTER TABLE work_logs ADD COLUMN ot_from_time TEXT DEFAULT ''");
-  } catch (e) {}
-  try {
-    db.exec("ALTER TABLE work_logs ADD COLUMN ot_to_time TEXT DEFAULT ''");
-  } catch (e) {}
-  try {
-    db.exec("ALTER TABLE work_logs ADD COLUMN ot_reason TEXT DEFAULT ''");
-  } catch (e) {}
+  try { db.exec("ALTER TABLE work_logs ADD COLUMN ot_hours REAL DEFAULT 0"); } catch (e) {}
+  try { db.exec("ALTER TABLE work_logs ADD COLUMN ot_from_time TEXT DEFAULT ''"); } catch (e) {}
+  try { db.exec("ALTER TABLE work_logs ADD COLUMN ot_to_time TEXT DEFAULT ''"); } catch (e) {}
+  try { db.exec("ALTER TABLE work_logs ADD COLUMN ot_reason TEXT DEFAULT ''"); } catch (e) {}
+  try { db.exec("ALTER TABLE work_logs ADD COLUMN work_role TEXT DEFAULT 'Thiết kế'"); } catch (e) {}
 
   // Kiểm tra và seed tài khoản ban đầu nếu chưa có user nào
   const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
